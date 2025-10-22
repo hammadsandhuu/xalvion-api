@@ -2,40 +2,47 @@ const express = require("express");
 const router = express.Router();
 const categoryController = require("../controllers/category.controller");
 const { protect, restrictTo } = require("../middleware/auth.middleware");
-const uploadCategory = require("../utils/uploadCategory");
+const uploadCategoryFields = require("../utils/uploadCategory"); 
 
-// Public routes
+
+
+// PUBLIC ROUTES
 router.get("", categoryController.getAllCategories);
 router.get("/subcategories", categoryController.getAllSubCategories);
 router.get("/:slug", categoryController.getCategory);
 
 
-// Admin-only routes
+// PROTECTED ROUTES (ADMIN ONLY)
 router.use(protect, restrictTo("admin"));
+
+// CATEGORY CRUD
 router.post(
   "",
-  uploadCategory.single("image"),
+  uploadCategoryFields,
   categoryController.createCategory
 );
+
 router.patch(
   "/:id",
-  uploadCategory.single("image"),
+  uploadCategoryFields,
   categoryController.updateCategory
 );
+
 router.delete("/:id", categoryController.deleteCategory);
 
-// Child category management (admin only)
+// SUBCATEGORY CRUD
 router.post(
-  "/:id/children",
-  uploadCategory.single("image"),
-  categoryController.addChildCategory
+  "/:parentId/subcategories",
+  uploadCategoryFields,
+  categoryController.createSubCategory
 );
-router.patch(
-  "/:id/children/:childId",
-  uploadCategory.single("image"),
-  categoryController.updateChildCategory
-);
-router.delete("/:id/children/:childId", categoryController.deleteChildCategory);
 
+router.patch(
+  "/subcategories/:id",
+  uploadCategoryFields,
+  categoryController.updateSubCategory
+);
+
+router.delete("/subcategories/:id", categoryController.deleteSubCategory);
 
 module.exports = router;

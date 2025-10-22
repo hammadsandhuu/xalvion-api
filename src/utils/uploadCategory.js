@@ -8,4 +8,11 @@ const uploadCategory = multer({
   fileFilter: imageFileFilter,
 });
 
-module.exports = uploadCategory;
+const uploadCategoryFields = uploadCategory.fields([
+  { name: "thumbnail", maxCount: 1 },
+  { name: "banner", maxCount: 1 },
+  { name: "mobile", maxCount: 1 },
+  { name: "gallery", maxCount: 5 },
+]);
+
+module.exports = uploadCategoryFields;
