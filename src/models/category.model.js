@@ -27,8 +27,6 @@ const categorySchema = new mongoose.Schema(
     type: { type: String, enum: ["mega", "normal"], default: "normal" },
 
     parent: { type: mongoose.Schema.Types.ObjectId, ref: "Category", default: null },
-
-    // 👇 Auto-handled ancestors
     ancestors: [{ type: mongoose.Schema.Types.ObjectId, ref: "Category" }],
 
     description: { type: String },
@@ -47,11 +45,7 @@ const categorySchema = new mongoose.Schema(
   }
 );
 
-// ========================
 // PRE-SAVE MIDDLEWARE
-// ========================
-
-// 1️⃣ Auto-generate unique slug
 categorySchema.pre("save", async function (next) {
   if (this.isModified("name")) {
     let slug = createSlug(this.name);
@@ -66,7 +60,7 @@ categorySchema.pre("save", async function (next) {
   next();
 });
 
-// 2️⃣ Auto-set ancestors if parent exists
+// Auto-set ancestors if parent exists
 categorySchema.pre("save", async function (next) {
   if (this.parent) {
     const parentCategory = await this.constructor.findById(this.parent);
@@ -77,25 +71,22 @@ categorySchema.pre("save", async function (next) {
   next();
 });
 
-// ========================
+
 // INDEXES
-// ========================
 categorySchema.index({ slug: 1 });
 categorySchema.index({ name: "text" });
 categorySchema.index({ parent: 1 });
 categorySchema.index({ ancestors: 1 });
 
-// ========================
+
 // VIRTUAL RELATIONS
-// ========================
 categorySchema.virtual("children", {
   ref: "Category",
   localField: "_id",
   foreignField: "parent",
 });
 
-// ========================
+
 // EXPORT
-// ========================
 const Category = mongoose.model("Category", categorySchema);
 module.exports = Category;
