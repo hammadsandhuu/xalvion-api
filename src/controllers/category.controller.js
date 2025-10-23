@@ -5,15 +5,22 @@ const APIFeatures = require("../utils/apiFeatures");
 const { cloudinary } = require("../../config/cloudinary");
 const successResponse = require("../utils/successResponse");
 
-// ========================
-// Recursive helper to populate all nested children
-// ========================
+
+
+
+
 const populateChildrenRecursively = async (category) => {
   await category
-    .populate({
-      path: "children",
-      populate: { path: "createdBy", select: "name email" },
-    })
+    .populate([
+      {
+        path: "children",
+        populate: [
+          { path: "createdBy", select: "name email" },
+          { path: "ancestors", select: "name slug" },
+        ],
+      },
+      { path: "ancestors", select: "name slug" },
+    ])
     .execPopulate();
 
   if (category.children && category.children.length > 0) {
@@ -25,30 +32,38 @@ const populateChildrenRecursively = async (category) => {
   return category;
 };
 
-// ========================
-// GET ALL CATEGORIES (WITH FULL NESTED CHILDREN)
-// ========================
+
+// GET ALL CATEGORIES (FULL TREE + PAGINATION + FILTERING)
 exports.getAllCategories = catchAsync(async (req, res, next) => {
-  const filter = { parent: null }; // Only top-level categories
+  const filter = { parent: null }
   if (req.query.type) filter.type = req.query.type;
+  if (req.query.active) filter.active = req.query.active === "true";
+  const total = await Category.countDocuments(filter);
+  const features = new APIFeatures(
+    Category.find(filter).populate("createdBy", "name email"),
+    req.query
+  )
+    .sort()
+    .limitFields()
+    .paginate(total);
 
-  let categories = await Category.find(filter).populate("createdBy", "name email");
-
-  // Recursively populate all children
+  let categories = await features.query;
   for (let i = 0; i < categories.length; i++) {
     categories[i] = await populateChildrenRecursively(categories[i]);
   }
 
   return successResponse(
     res,
-    { categories },
-    "Categories fetched successfully with nested children"
+    {
+      categories,
+      pagination: features.pagination,
+    },
+    "Categories fetched successfully with nested children and pagination"
   );
 });
 
-// ========================
-// GET SINGLE CATEGORY (WITH FULL NESTED CHILDREN)
-// ========================
+
+// GET SINGLE CATEGORY
 exports.getCategory = catchAsync(async (req, res, next) => {
   let category = await Category.findOne({ slug: req.params.slug }).populate("createdBy", "name email");
 
@@ -59,9 +74,8 @@ exports.getCategory = catchAsync(async (req, res, next) => {
   return successResponse(res, { category }, "Category fetched successfully with nested children");
 });
 
-// ========================
-// CREATE CATEGORY
-// ========================
+
+// CREATE CATEGORY (ancestors auto-handled by schema)
 exports.createCategory = catchAsync(async (req, res, next) => {
   if (req.files && req.files.length) {
     req.body.images = req.files.map(file => ({
@@ -78,9 +92,8 @@ exports.createCategory = catchAsync(async (req, res, next) => {
   return successResponse(res, { category: newCategory }, "Category created successfully", 201);
 });
 
-// ========================
+
 // UPDATE CATEGORY
-// ========================
 exports.updateCategory = catchAsync(async (req, res, next) => {
   const category = await Category.findById(req.params.id);
   if (!category) return next(new AppError("No category found with that ID", 404));
@@ -107,9 +120,8 @@ exports.updateCategory = catchAsync(async (req, res, next) => {
   return successResponse(res, { category: updatedCategory }, "Category updated successfully");
 });
 
-// ========================
+
 // DELETE CATEGORY
-// ========================
 exports.deleteCategory = catchAsync(async (req, res, next) => {
   const category = await Category.findById(req.params.id);
   if (!category) return next(new AppError("No category found with that ID", 404));
@@ -121,13 +133,11 @@ exports.deleteCategory = catchAsync(async (req, res, next) => {
   }
 
   await Category.findByIdAndDelete(req.params.id);
-
   return successResponse(res, null, "Category deleted successfully", 204);
 });
 
-// ========================
+
 // CREATE SUBCATEGORY
-// ========================
 exports.createSubCategory = catchAsync(async (req, res, next) => {
   req.body.parent = req.params.parentId;
   req.body.createdBy = req.user.id;
@@ -145,9 +155,8 @@ exports.createSubCategory = catchAsync(async (req, res, next) => {
   return successResponse(res, { subCategory }, "Subcategory created successfully", 201);
 });
 
-// ========================
+
 // UPDATE SUBCATEGORY
-// ========================
 exports.updateSubCategory = catchAsync(async (req, res, next) => {
   const subCategory = await Category.findById(req.params.id);
   if (!subCategory) return next(new AppError("No subcategory found with that ID", 404));
@@ -174,9 +183,8 @@ exports.updateSubCategory = catchAsync(async (req, res, next) => {
   return successResponse(res, { subCategory: updatedSubCategory }, "Subcategory updated successfully");
 });
 
-// ========================
+
 // DELETE SUBCATEGORY
-// ========================
 exports.deleteSubCategory = catchAsync(async (req, res, next) => {
   const subCategory = await Category.findById(req.params.id);
   if (!subCategory) return next(new AppError("No subcategory found with that ID", 404));
@@ -192,9 +200,8 @@ exports.deleteSubCategory = catchAsync(async (req, res, next) => {
   return successResponse(res, null, "Subcategory deleted successfully", 204);
 });
 
-// ========================
+
 // GET ALL SUBCATEGORIES (OPTIONAL FILTER BY PARENT)
-// ========================
 exports.getAllSubCategories = catchAsync(async (req, res, next) => {
   const filter = {};
   if (req.query.parentId) filter.parent = req.query.parentId;
@@ -217,4 +224,37 @@ exports.getAllSubCategories = catchAsync(async (req, res, next) => {
     { subCategories, pagination: features.pagination },
     "Subcategories fetched successfully"
   );
+});
+
+
+exports.getCategoryPath = catchAsync(async (req, res, next) => {
+  const category = await Category.aggregate([
+    { $match: { slug: req.params.slug } },
+    {
+      $lookup: {
+        from: "categories",
+        localField: "ancestors",
+        foreignField: "_id",
+        as: "ancestorDetails",
+      },
+    },
+    {
+      $project: {
+        name: 1,
+        slug: 1,
+        "ancestorDetails.name": 1,
+        "ancestorDetails.slug": 1,
+      },
+    },
+  ]);
+
+  if (!category || !category[0]) {
+    return next(new AppError("Category not found", 404));
+  }
+
+  const data = category[0];
+  const names = [...data.ancestorDetails.map(a => a.name), data.name];
+  const fullPath = names.join(" > ");
+
+  return successResponse(res, { fullPath, pathArray: names }, "Category path generated successfully");
 });

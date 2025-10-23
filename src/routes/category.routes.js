@@ -9,6 +9,7 @@ const uploadCategoryFields = require("../utils/uploadCategory");
 // PUBLIC ROUTES
 router.get("", categoryController.getAllCategories);
 router.get("/subcategories", categoryController.getAllSubCategories);
+router.get("/path", categoryController.getAllSubCategories);
 router.get("/:slug", categoryController.getCategory);
 
 
